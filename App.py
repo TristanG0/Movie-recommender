@@ -1,36 +1,91 @@
 import streamlit as st
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
-st.title("🎬 Movie Recommendation System")
+# ===============================
+# Page Config (Cleaner Look)
+# ===============================
+st.set_page_config(
+    page_title="Movie Recommender",
+    page_icon="🎬",
+    layout="wide"
+)
 
+# ===============================
+# Title Section
+# ===============================
+st.title("🎬 Movie Recommender")
+st.caption("Discover movies based on genres and popularity")
+
+# ===============================
+# Load Data
+# ===============================
 @st.cache_data
 def load_data():
     df = pd.read_csv("movies.csv")
-    df["genres"] = df["genres"].str.replace("|", " ", regex=False)
     return df
 
 movies = load_data()
 
-tfidf = TfidfVectorizer(stop_words="english")
-tfidf_matrix = tfidf.fit_transform(movies["genres"])
+# ===============================
+# Extract Genres
+# ===============================
+all_genres = sorted(
+    {genre for genres in movies["genres"] for genre in genres.split("|")}
+)
 
-cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+# ===============================
+# Sidebar Controls
+# ===============================
+st.sidebar.header("🎯 Filter Movies")
 
-def recommend_movies(title, n=5):
-    idx = movies[movies["title"].str.contains(title, case=False)].index
-    if len(idx) == 0:
-        return []
-    idx = idx[0]
-    scores = list(enumerate(cosine_sim[idx]))
-    scores = sorted(scores, key=lambda x: x[1], reverse=True)[1:n+1]
-    return movies["title"].iloc[[i[0] for i in scores]]
+selected_genres = st.sidebar.multiselect(
+    "Select genre(s)",
+    all_genres
+)
 
-movie_choice = st.selectbox("Select a movie:", movies["title"])
+num_movies = st.sidebar.slider(
+    "Number of recommendations",
+    min_value=5,
+    max_value=30,
+    value=10
+)
 
-if st.button("Recommend"):
-    results = recommend_movies(movie_choice)
-    st.subheader("Recommended Movies")
-    for movie in results:
-        st.write("🎥", movie)
+sort_option = st.sidebar.selectbox(
+    "Sort results by",
+    ["Popularity (if available)", "Alphabetical"]
+)
+
+# ===============================
+# Recommendation Logic
+# ===============================
+def genre_match(genres):
+    return any(g in genres for g in selected_genres)
+
+if st.sidebar.button("🎥 Recommend Movies"):
+    if not selected_genres:
+        st.warning("Please select at least one genre.")
+    else:
+        results = movies[movies["genres"].apply(genre_match)]
+
+        # Sorting logic
+        if sort_option == "Popularity (if available)" and "popularity" in results.columns:
+            results = results.sort_values("popularity", ascending=False)
+        else:
+            results = results.sort_values("title")
+
+        st.subheader("🍿 Recommended Movies")
+
+        if results.empty:
+            st.info("No movies found for the selected genre(s).")
+        else:
+            # Display movies in a clean card-style layout
+            for _, row in results.head(num_movies).iterrows():
+                with st.container():
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"### 🎞 {row['title']}")
+                        st.markdown(f"**Genres:** {row['genres']}")
+                    with col2:
+                        if "popularity" in row:
+                            st.metric("Popularity", row.get("popularity", "N/A"))
+                    st.divider()
